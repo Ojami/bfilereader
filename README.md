@@ -172,4 +172,25 @@ disp(out)
       6      3.0458e+07    "G"    "A"    "rs1264457"       "HLA-E"       "missense_variant"    4.4e-08    -0.31    0.056 
 ```
 
-## Benchmarking
+## Additional notes
+``bfilereader`` can also parse the input file in parallel; however, wether using this option positively or negatively influences the performance depends on several factors (size of file in hand, the available memory, memory overhead and more). For a good discussion, [see here](https://levelup.gitconnected.com/be-careful-with-java-parallel-streams-3ed0fd70c3d0). To show how it may affect the pattern matching, we will use another [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
+```
+patt = ["LDLR$", "missense"];
+col = ["nearest_genes", "consequence"];
+out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true);
+Elapse time: 6.898 sec
+
+out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true, 'parallel', true);
+Elapse time: 4.388 sec
+
+% check with MATLAB tall datastore
+parpool('local', 8); % max available cores
+ds = tabularTextDatastore(file, 'FileExtensions', '.tsv', 'TextType', 'string');
+ds.SelectedFormats{1} = '%q';
+ds = tall(ds);
+idx = endsWith(ds.nearest_genes, "LDLR") & contains(ds.consequence, patt(2));
+ds(~idx, :) = [];
+out2 = gather(ds);
+Evaluation completed in 9 sec
+
+```
