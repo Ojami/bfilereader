@@ -156,7 +156,7 @@ beta range: -2.9 to -0.3
 We could also use a mixture of examples 2 and 3 by including both filtering and pattern options. Suppose we want to get missense variants on [MHC class I genes](https://en.wikipedia.org/wiki/MHC_class_I) passing 5e-8 threshold and having a negative beta:
 ```
 patterns = ["HLA-\w{1}$", "missense"]; 
-cols = ["nearest_genes", "consequence"]'
+cols = ["nearest_genes", "consequence"];
 out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol',...
   ["pval", "beta"], 'operator', "<=", 'pattern', patterns, 'patternCol', cols, 'multiCol', true);
 Elapse time: 41.277 sec
@@ -173,24 +173,114 @@ disp(out)
 ```
 
 ## Additional notes
-``bfilereader`` can also parse the input file in parallel; however, wether using this option positively or negatively influences the performance depends on several factors (size of file in hand, the available memory, memory overhead and more). For a good discussion, [see here](https://levelup.gitconnected.com/be-careful-with-java-parallel-streams-3ed0fd70c3d0). To show how it may affect the pattern matching, we will use another [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
+``bfilereader`` can also parse the input file in parallel; however, wether using this option positively or negatively influences the performance depends on several factors (size of file in hand, the available memory, memory overhead and more). For a good discussion, [see here](https://levelup.gitconnected.com/be-careful-with-java-parallel-streams-3ed0fd70c3d0). To show how it may affect the file processing, we consider 3 scenarios using different delimited files and we compare sequential and parallel ``bfilereader`` with MATLAB tall datastore. Under all scenarios, we will use only uncompressed files.
+
+### Scenario 1: ~490 MB 
+Here, we use a [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
 ```
+file = "phenocode-286.81.tsv";
+
+fprintf('file size: %.2f mb\n', dir(file).bytes/1e6)
+ile size: 490.55 mb
+
 patt = ["LDLR$", "missense"];
 col = ["nearest_genes", "consequence"];
 out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true);
-Elapse time: 6.898 sec
 
 out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true, 'parallel', true);
-Elapse time: 4.388 sec
 
 % check with MATLAB tall datastore
 parpool('local', 8); % max available cores
 ds = tabularTextDatastore(file, 'FileExtensions', '.tsv', 'TextType', 'string');
-ds.SelectedFormats{1} = '%q';
+ds.SelectedFormats{1} = '%q'; % for chromosome "X"
 ds = tall(ds);
-idx = endsWith(ds.nearest_genes, "LDLR") & contains(ds.consequence, patt(2));
-ds(~idx, :) = [];
-out2 = gather(ds);
-Evaluation completed in 9 sec
+idx = endsWith(ds.(col(1)), "LDLR") & contains(ds.(col(2)), patt(2));
+out2 = gather(ds(idx, :));
+
+% benchmark: mean elapsed time over 3 repetitions
+tbench.sequential = [7.3670 7.2930 7.3010];
+tbench.parallel = [3.7540 3.7330 3.8020];
+tbench.tall = [5.6000 5.4000 5.2000];
+disp(table(structfun(@mean, tbench), 'VariableNames', {'mean elapsed time'}, 'RowNames', fieldnames(tbench)))
+
+                  mean elapsed time
+                  _________________
+
+    sequential         7.3203      
+    parallel            3.763      
+    tall                  5.4
+
 
 ```
+### Scenario 2: ~2.3 GB
+Here, we use the same delimited but uncompressed file (`phenocode-275.1.tsv`) we used in examples above. This file is relatively bigger (~4.6 times) the file we used in scenario 1.
+```
+file = "phenocode-275.1.tsv";
+
+fprintf('file size: %.2f GB\n', dir(file).bytes/1e9)
+file size: 2.43 GB
+
+patterns = ["HLA-", "missense"];
+cols = ["nearest_genes", "consequence"];
+out = bfilereader(file, 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol',["pval", "beta"], 'operator', "<=",...
+'pattern', patterns, 'patternCol', cols, 'multiCol', true);
+
+out = bfilereader(file, 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol',["pval", "beta"], 'operator', "<=",...
+'pattern', patterns, 'patternCol', cols, 'multiCol', true, 'parallel', true);
+
+ds = tabularTextDatastore(file, 'FileExtensions', '.tsv', 'TextType', 'string');
+ds.SelectedFormats{1} = '%q';
+tt = tall(ds);
+idx = startsWith(tt.(cols(1)), patterns(1)) & startsWith(tt.(cols(2)), patterns(2)) & tt.pval <= 5e-8 & tt.beta <= 0;
+out2 = gather(ds(idx, :));
+
+% benchmark: mean elapsed time over 3 repetitions
+tbench.sequential = [30.593, 30.447, 30.371];
+tbench.parallel = [19.740 19.907 20.116];
+tbench.tall = [23.361, 25.508, 24.617];
+disp(table(structfun(@mean, tbench), 'VariableNames', {'mean elapsed time'}, 'RowNames', fieldnames(tbench)))
+                  mean elapsed time
+                  _________________
+
+    sequential          30.47      
+    parallel           19.921      
+    tall               24.495  
+```
+### Scenario 3: ~18 GB
+Lastly, we use a much bigger file (I used chromosome 1 from [dbNSFP project](https://sites.google.com/site/jpopgen/dbNSFP) version 4.1). In this case, ``parallel`` would throw [out of memory error](https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/memleaks002.html), so we only benchmark with sequential ``bfilereader`` and tall datastore. 
+```
+file = "dbNSFP4.1a_variant.chr1";
+
+fprintf('file size: %.2f GB\n', dir(file).bytes/1e9)
+file size: 18.44 GB
+
+filterCol = "CADD_phred";
+patternCol = "genename";
+patt = "^MARC1$";
+filter = 15;
+
+out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', patternCol,...
+'filter', filter, 'filterCol', filterCol, 'operator', '>=');
+
+
+parpool('local', 8); % max available cores
+ds = tabularTextDatastore(file, 'FileExtensions', '.chr1', 'TextType', 'string', 'TreatAsMissing', {'.', '-'});
+ds.SelectedFormats = repmat({'%q'}, 1, numel(ds.SelectedFormats)); % to avoid conversion to double error
+ds.SelectedFormats(ismember(ds.SelectedVariableNames, filterCol)) = {'%f'};
+tt = tall(ds);
+idx = ismember(tt.(patternCol), "MARC1") & tt.(filterCol) >= filter;
+out2 = gather(ds(idx, :));
+
+% benchmark: mean elapsed time over 3 repetitions
+tbench.sequential = [113.885, 113.662, 113.943];
+tbench.tall = [389.2, 392.66 405.336];
+disp(table(structfun(@mean, tbench), 'VariableNames', {'mean elapsed time'}, 'RowNames', fieldnames(tbench)))
+mean elapsed time
+                  _________________
+
+    sequential         113.83      
+    tall               395.73   
+```
+
+In scenarios 1 and 2, parallel ``bfilereader`` performed better than both MATLAB tall datastore and sequential ``bfilereader``. However, when file does not fit into the memory like the one in scenario 3, and memory overhead is can be a serious issue. Under such circumstances, parallel computing can significantly affect the performance.
+Bottom-line: ``bfilereader`` parallel has a better performance than sequential only when memory overhead. 
