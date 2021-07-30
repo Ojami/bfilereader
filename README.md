@@ -1,3 +1,4 @@
+[![View bfilereader on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://se.mathworks.com/matlabcentral/fileexchange/96827-bfilereader)
 # bfilereader :fire:
 `bfilereader` (short for big file reader) is a MATLAB tool for reading and parsing big delimited files (can also be GNU zip `gz` compressed) in a fast and efficient manner. `bfilereader` takes advantages of a dependent Java class (`bFileReaderDep.class`) with multiple methods implemented for reading, mapping and filtering big delimited files.
 
