@@ -97,7 +97,8 @@ function out = bfilereader(bfile, opts)
 %   out:        read/filtered file content with the format set in
 %               'return' option.
 % 
-% Oveis Jamialahmadi, Sahlgrenska Akademy, July 2021.
+% Oveis Jamialahmadi, Sahlgrenska Academy, University of Gothenburg, July 2021.
+% 
 % Important notes: 
 %                   - MATLAB R2019b or newer is needed!
 %
@@ -271,39 +272,30 @@ out = ''; % if crashes, return this empty char
 try
     switch opts.method
         case "readAll"
-            fprintf('method: readAll\n')
             out = reader.readAll(bfile, opts.sep, opts.skip, opts.parFlag);
         case "readCol" % --------------------------------------------------
             if numel(opts.patternCol) > 1
-                fprintf('method: getColumnBuffer\n')
                 out = reader.getColumnBuffer(bfile, opts.sep, opts.patternCol, opts.skip, opts.parFlag);
             else
-                fprintf('method: getColumn\n')
                 out = reader.getColumn(bfile, opts.sep, java.lang.Integer(double(opts.patternCol)), opts.skip, opts.parFlag);
             end
         case "filter" % ---------------------------------------------------
-            fprintf('method: filterCol\n')
             out = reader.filterCol(bfile, opts.sep, opts.filterCol, opts.operator, opts.filter, opts.skip, opts.parFlag, opts.extractCol);
         case "match" % ----------------------------------------------------
             if opts.multiCol
-                fprintf('method: multiCompareToCols\n')
                 out = reader.multiCompareToCols(bfile, opts.skip, opts.sep, opts.pattern, opts.patternCol, opts.parFlag, opts.extractCol);
             else
                 if numel(opts.patternCol) == numel(opts.headerVars) % search over all columns
-                    fprintf('method: compare\n')
                     out = reader.compare(bfile, opts.pattern, opts.sep, opts.skip, opts.parFlag, opts.extractCol);
                 else
-                    fprintf('method: compareToCols\n')
                     out = reader.compareToCols(bfile, opts.pattern, opts.sep, opts.patternCol, opts.skip, opts.parFlag, opts.extractCol);
                 end
             end
         case "match & filter" % -------------------------------------------
             if opts.multiCol
-                fprintf('method: multiCompareFilterCol\n')
                 out = reader.multiCompareFilterCol(bfile, opts.skip, opts.sep, opts.pattern,...
                     opts.patternCol, opts.operator, opts.filterCol, opts.filter, opts.parFlag, opts.extractCol);
             else
-                fprintf('method: compareFilterCol\n')
                 out = reader.compareFilterCol(bfile, opts.skip, opts.sep, opts.pattern,...
                     opts.patternCol, opts.operator, opts.filterCol, opts.filter, opts.parFlag, opts.extractCol);
             end
