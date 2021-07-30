@@ -1,5 +1,5 @@
 # bfilereader :fire:
-`bfilereader` (short for big file reader) is a MATLAB function for reading and parsing big delimited files (can also be GNU zip `gz` compressed) in a fast and efficient manner. `bfilereader` takes advantages of a dependent Java class (`bFileReaderDep.class`) with multiple methods implemented for reading, mapping and filtering big delimited files.
+`bfilereader` (short for big file reader) is a MATLAB tool for reading and parsing big delimited files (can also be GNU zip `gz` compressed) in a fast and efficient manner. `bfilereader` takes advantages of a dependent Java class (`bFileReaderDep.class`) with multiple methods implemented for reading, mapping and filtering big delimited files.
 
 ## Requirements
 There are few requirements to be met prior to use `bfilereader`:
@@ -29,7 +29,7 @@ fprintf('file size: %.2f mb\n', info.bytes/1e6)
 file size: 641.33 mb
 ```
 ### Example 1: a quick glance at file content
-To see what sort of data is stored in this file, we can simply only call the function with `summary` option set to `only` to ask _only_ for few first lines of the file. It's also useful to see the number of rows by setting `verbose` flag to `on`.
+To see what sort of data this file contains, we can simply call the function with `summary` option set to `only` to fetch _only_ first few lines. It's also useful to see the number of rows by setting `verbose` flag to `on`.
 ```
 out = bfilereader('phenocode-275.1.tsv.gz', 'summary', 'only', 'verbose', 'on');
 Elapsed time is 11.828086 seconds.
@@ -45,10 +45,10 @@ file first 6 rows:
     "1"        "54353"    "C"      "A"      "rs140052487"    "OR4F5"            "intron_variant"           "0.8"     "0.81"     "3.3"       "0.00036"    "289.1"       "0.076" 
     "1"        "54564"    "G"      "T"      "rs558796213"    "OR4F5"            "intron_variant"           "0.98"    "0.091"    "3.1"       "0.00015"    "121.2"       "0.0095"
 ```
-This file has around ~28,300,000 rows with 13 columns, which *may* not fit into the memory. From the first row, we can easily understand the file has one header row (variable names), which can be used for extracting required data from the file. We can use this summary to extract more data.
+This file has ~28,300,000 rows and 13 columns, which *may* not fit into the memory. From the first row, we easily notice that the file has one header row (variable names). We can use this summary table to extract additional data.
 
 ### Example 2: pattern matching
-We can apply pattern matching to this table to extract desired information. For instance, to extract variants on either PNPLA3 or GPAM genes (column `nearest_genes`):
+Function can apply pattern matching to extract desired information. For instance, to extract variants on either PNPLA3 or GPAM genes (column `nearest_genes`):
 ```
 out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'pattern', ["PNPLA3", "GPAM"], 'patternCol', "nearest_genes");
 Elapse time: 28.334 sec
@@ -64,7 +64,7 @@ ans =
     "PNPLA3"
     "PNPLA3,SAMM50"
 ```
-We can also use regular expression (regex) and further add another filter. So, this time we want to find all missense variants and all variants on genes from PNPLA family. We also would like to only extract frist 10 columns (by using `extractCol` option). 
+We can also use regular expression (regex) and further add another filter. This time, we want to find 1)all variants on PNPLA family genes and 2)missense variants on other genes. We also would like to only extract frist 10 columns (by using `extractCol` option). 
 ```
 patterns = ["PNPLA*", "missense"];
 cols = ["nearest_genes", "consequence"]; 
@@ -95,9 +95,10 @@ head(pnpla2, 4)
      11      8.1619e+05    "C"    "T"    "rs755386980"      "PNPLA2"       "upstream_gene_variant"    0.78     -0.68      2.4 
 
 ```
-In above example, we fetched all missense variants except for PNPLA family, for which we extracted all variantes regardless of their consequences. We can narrow down our pattern matching and only extract missense variants on PNPLA family. To do so, we need to set ``multiCol`` flag to `true` to technically tell `bfilereader` to match each pattern to each respective column:
+In above example, we fetched all missense variants except for PNPLA family, for which we extracted all variants regardless of their consequences. But, what if we were only interested in finding missense variants on PNPLA family genes? To do so, we need to set ``multiCol`` flag to `true` to tell `bfilereader` to apply each pattern to its corresponding column (i.e. pattern 1 to column 1, pattern 2 to column 2, ...):
 ```
-out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'pattern', patterns, 'patternCol', cols, 'extractCol', 1:10, 'multiCol', true);
+out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'pattern', patterns, 'patternCol', cols,...
+     'extractCol', 1:10, 'multiCol', true);
 Elapse time: 40.223 sec
 
 size(out)
@@ -126,9 +127,10 @@ unique(out.nearest_genes)
 ```
 
 ### Example 3: Numeric filtering 
-In addition to pattern matching for strings, data of numeric type can be filtered as well. For instance, we would like to only see how many variants pass genome-wide significance threshold (`5e-8`). 
+In addition to pattern matching for strings, data of numeric type can be filtered as well. For instance, if we would like to only see how many variants pass genome-wide significance threshold (`5e-8`), we can set ``filter`` and `filterCol` options:
 ```
-out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'extractCol', 1:10, 'filter', 5e-8, 'filterCol', "pval", 'operator', '<='); % any pval <= 5e-8
+out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'extractCol', 1:10,...
+     'filter', 5e-8, 'filterCol', "pval", 'operator', '<='); % any pval <= 5e-8
 Elapse time: 26.312 sec
 
 size(out)
@@ -137,9 +139,10 @@ size(out)
 fprintf('pval range: %.3g - %.3g\n', min(out.pval), max(out.pval))
 pval range: 0 - 5e-08
 ```
-Similar to pattern matching, we can filter for other columns. However, we don't need to set `multiCol` option in this case since every filtering value can only be applied to one column. This time we want to find variants passing genome-wide significance threshold but also have a negative effect size (beta):
+Similar to pattern matching, we can filter for other columns. However, we don't need to set `multiCol` option in this case since every filtering value can only be applied to one column. This time we want to find variants passing genome-wide significance threshold and having a negative effect size (beta):
 ```
-out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol', ["pval", "beta"], 'operator', '<='); % any pval <= 5e-8
+out = bfilereader('phenocode-275.1.tsv.gz', 'header', true, 'extractCol', 1:10, ...
+     'filter', [5e-8, 0], 'filterCol', ["pval", "beta"], 'operator', '<='); % any pval <= 5e-8
 Elapse time: 27.426 sec
 
 size(out)
@@ -153,7 +156,7 @@ beta range: -2.9 to -0.3
 ```
 
 ### Example 4: Pattern matching with numeric filtering
-We could also use a mixture of examples 2 and 3 by including both filtering and pattern options. Suppose we want to get missense variants on [MHC class I genes](https://en.wikipedia.org/wiki/MHC_class_I) passing 5e-8 threshold and having a negative beta:
+We can also use a mixture of examples 2 and 3 by including both filtering and pattern options. Suppose we want to get missense variants on [MHC class I genes](https://en.wikipedia.org/wiki/MHC_class_I) passing 5e-8 threshold and having a negative beta:
 ```
 patterns = ["HLA-\w{1}$", "missense"]; 
 cols = ["nearest_genes", "consequence"];
@@ -176,7 +179,7 @@ disp(out)
 ``bfilereader`` can also parse the input file in parallel; however, wether using this option positively or negatively influences the performance depends on several factors (size of file in hand, the available memory, memory overhead and more). For a good discussion, [see here](https://levelup.gitconnected.com/be-careful-with-java-parallel-streams-3ed0fd70c3d0). To show how it may affect the file processing, we consider 3 scenarios using different delimited files and we compare sequential and parallel ``bfilereader`` with MATLAB tall datastore. Under all scenarios, we will use only uncompressed files.
 
 ### Scenario 1: ~490 MB 
-Here, we use a [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
+We being with a [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
 ```
 file = "phenocode-286.81.tsv";
 
@@ -185,16 +188,16 @@ ile size: 490.55 mb
 
 patt = ["LDLR$", "missense"];
 col = ["nearest_genes", "consequence"];
-out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true);
+out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true); % sequential
 
-out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true, 'parallel', true);
+out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', col, 'multiCol', true, 'parallel', true); % parallel
 
 % check with MATLAB tall datastore
 parpool('local', 8); % max available cores
 ds = tabularTextDatastore(file, 'FileExtensions', '.tsv', 'TextType', 'string');
 ds.SelectedFormats{1} = '%q'; % for chromosome "X"
 ds = tall(ds);
-idx = endsWith(ds.(col(1)), "LDLR") & contains(ds.(col(2)), patt(2));
+idx = endsWith(ds.(col(1)), "LDLR") & contains(ds.(col(2)), patt(2)); % regexp and contains cannot be applied to tall arrays
 out2 = gather(ds(idx, :));
 
 % benchmark: mean elapsed time over 3 repetitions
@@ -213,7 +216,7 @@ disp(table(structfun(@mean, tbench), 'VariableNames', {'mean elapsed time'}, 'Ro
 
 ```
 ### Scenario 2: ~2.3 GB
-Here, we use the same delimited but uncompressed file (`phenocode-275.1.tsv`) we used in examples above. This file is relatively bigger (~4.6 times) the file we used in scenario 1.
+Next, we use the same delimited but uncompressed file (`phenocode-275.1.tsv`) we used in examples above. This file is relatively bigger (~4.6 times) than the file we used in scenario 1.
 ```
 file = "phenocode-275.1.tsv";
 
@@ -223,10 +226,10 @@ file size: 2.43 GB
 patterns = ["HLA-", "missense"];
 cols = ["nearest_genes", "consequence"];
 out = bfilereader(file, 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol',["pval", "beta"], 'operator', "<=",...
-'pattern', patterns, 'patternCol', cols, 'multiCol', true);
+     'pattern', patterns, 'patternCol', cols, 'multiCol', true);
 
 out = bfilereader(file, 'header', true, 'extractCol', 1:10, 'filter', [5e-8, 0], 'filterCol',["pval", "beta"], 'operator', "<=",...
-'pattern', patterns, 'patternCol', cols, 'multiCol', true, 'parallel', true);
+     'pattern', patterns, 'patternCol', cols, 'multiCol', true, 'parallel', true);
 
 ds = tabularTextDatastore(file, 'FileExtensions', '.tsv', 'TextType', 'string');
 ds.SelectedFormats{1} = '%q';
@@ -260,7 +263,7 @@ patt = "^MARC1$";
 filter = 15;
 
 out = bfilereader(file, 'header', true, 'pattern', patt, 'patternCol', patternCol,...
-'filter', filter, 'filterCol', filterCol, 'operator', '>=');
+     'filter', filter, 'filterCol', filterCol, 'operator', '>=');
 
 
 parpool('local', 8); % max available cores
@@ -282,5 +285,5 @@ mean elapsed time
     tall               395.73   
 ```
 
-In scenarios 1 and 2, parallel ``bfilereader`` performed better than both MATLAB tall datastore and sequential ``bfilereader``. However, when file does not fit into the memory like the one in scenario 3, and memory overhead is can be a serious issue. Under such circumstances, parallel computing can significantly affect the performance.
-Bottom-line: ``bfilereader`` parallel has a better performance than sequential only when memory overhead. 
+In scenarios 1 and 2, parallel ``bfilereader`` performed better than both MATLAB tall datastore and sequential ``bfilereader``. However, when file does not fit into the memory like the case in scenario 3, memory overhead can be a serious issue. Under such circumstances, parallel computing can negatively affect the performance. Therefore, don't apply ``parallel`` flag just because it seems cool! proper benchmarking can show if your task really benefits from parallel computing or not.
+
