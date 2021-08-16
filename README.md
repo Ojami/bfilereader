@@ -180,7 +180,7 @@ disp(out)
 ``bfilereader`` can also parse the input file in parallel; however, whether using this option positively or negatively influences the performance depends on several factors (size of file in hand, the available memory, memory overhead and more). For a good discussion, [see here](https://levelup.gitconnected.com/be-careful-with-java-parallel-streams-3ed0fd70c3d0). To show how it may affect the file processing, we consider 3 scenarios using different delimited files and we compare sequential and parallel ``bfilereader`` with MATLAB tall datastore. Under all scenarios, we will use only uncompressed files.
 
 ### Scenario 1: ~490 MB 
-We being with a [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
+We begin with a [similar but smaller GWAS summary statistics file](https://pheweb.org/MGI-freeze1/pheno/286.81). 
 ```
 file = "phenocode-286.81.tsv";
 
