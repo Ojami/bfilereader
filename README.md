@@ -23,7 +23,7 @@ savepath;
 - Filtering data of numeric type based on different criteria.
 
 ## Examples
-Different use of `bfilereader` have been covered in the following examples. The working file for these examples is publicly available [GWAS summary statistics on iron metabolism disorder](https://pheweb.org/UKB-SAIGE/download/275.1) which can be freely download in GZIP format (``phenocode-275.1.tsv.gz``). 
+Different uses of `bfilereader` have been covered in the following examples. The working file for these examples is publicly available [GWAS summary statistics on iron metabolism disorder](https://pheweb.org/UKB-SAIGE/download/275.1) which can be freely download in GZIP format (``phenocode-275.1.tsv.gz``). 
 ```matlab
 info = dir('phenocode-275.1.tsv.gz');
 fprintf('file size: %.2f mb\n', info.bytes/1e6)
