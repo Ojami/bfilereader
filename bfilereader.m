@@ -57,7 +57,7 @@ function out = bfilereader(bfile, opts)
 %   header:     a logical to check whether first row contains header (true)
 %               or file has no header (default: false). This flag is
 %               used for 'return' as "table".
-
+% 
 %   skip:       a scalar double: number of lines to skip (default: 0). When
 %               'header' is true, then first row is treated as header
 %               (variable) names, then bfilereader automatically skips the
@@ -67,7 +67,7 @@ function out = bfilereader(bfile, opts)
 %               merely shows the number of comment/info lines in the
 %               beginning of the input file, and not the header row (see
 %               examples for more details).
-
+% 
 %   return:     the output format of returned rows, which can be either:
 %                   - raw:        char vector output from the dependent 
 %                                 Java class.
@@ -88,6 +88,9 @@ function out = bfilereader(bfile, opts)
 %               lines will be returned as output. This may be useful when
 %               file is big enough that user wants to check the file
 %               content before any decision on how to parse the file.
+%   comment:    same as MATLAB readtable CommentStyle. bfilereader skips
+%               lines starting with this comment style. Note, this option
+%               overrides 'skip' option. 
 % 
 %   verbose:    to show warning/messages (on) or call the function
 %               silently (off). Default is "timeOnly" showing the elapsed
@@ -110,11 +113,16 @@ function out = bfilereader(bfile, opts)
 % 
 %                   - Java 8 is required (version -java).For more
 %                   information, see: https://se.mathworks.com/help/compiler_sdk/java/configure-your-java-environment.html
+% 
+% @03/02/2022: a bug was fixed with single column in 'extractCol'.
+% @03/11/2022: 'comment' options was added, and skips lines having this
+%               pattern.
+% @03/19/2022: a bug in 'sep' argument was fixed for 1 column files. 
 
 arguments
     bfile {mustBeFile} % input file 
     opts.readAll (1, 1) logical = false; % reads whole file content.
-    opts.sep {mustBeTextScalar} = "" % if empty, delimiter is automatically identified.
+    opts.sep {mustBeTextScalar} % if empty, delimiter is automatically identified.
     
     opts.pattern {mustBeText, mustBeVector} = "" % a string array/scalar containing the patterns to be used for filtering.
     opts.patternCol {mustBeVector} = NaN; % column names/indices for pattern search. Default is NaN: all columns.
@@ -130,8 +138,14 @@ arguments
     opts.skip (1, 1) double = 0; % number of lines to skip. Default is 0: parse all rows in the input file (see docs above).
     opts.return {mustBeMember(opts.return, ["table", "rawTable", "raw", "string"])} = "table";
     opts.parallel (1, 1) logical = false; % use parallel (true) or sequential (false) stream.
-    opts.summary {mustBeMember(opts.summary, ["on", "off", "only"])} = "off"; % "on": show first 6 lines of file, "only": don't process files after displaying summary.
+    opts.summary {mustBeMember(opts.summary, ["on", "off", "only", "firstline"])} = "off"; % "on": show first 6 lines of file, "only": don't process files after displaying summary, "firstline": only read the first line of file (after 'skip' lines).
     opts.verbose {mustBeMember(opts.verbose, ["on", "off", "timeOnly"])} = "timeOnly"; % "on": show warnings/messages, "timeOnly": only show elapsed time.
+    opts.comment {mustBeTextScalar}
+
+    % under development options
+    opts.joinCol (1, 1) logical = false % joins (_)columns in 'patternCol' into a single column prior to pattern match. 
+    opts.chunk (1, 1) double = 0 % mixture of parallel and serial processing. File's split into chunks and each chunk is processed in parallel (parallel flag must be set to true, default: not used)
+    opts.extractRow {mustBeVector} = NaN % row indices to be extract. Only applicable to method getColumn.
 end
 
 %% check inputs -----------------------------------------------------------
@@ -208,8 +222,26 @@ else
     opts.method = "filter";
 end
 
+
 %% begin file proccessing -------------------------------------------------
 reader = bFileReaderDep;
+
+% check comment style
+if isfield(opts, 'comment')
+    start = 0;
+    while true
+        checkline = string(reader.readHeader(bfile, java.lang.Integer(start)));
+        if ~startsWith(checkline, opts.comment)
+             % no reason to continue with start == 0: comment can't be even
+             % found in first line
+            if start ~= 0
+               opts.skip = start; % comment lines
+            end
+            break
+        end
+        start = start + 1;
+    end
+end
 
 % get file header and count rows ------------------------------------------
 opts.line = string(reader.readHeader(bfile, java.lang.Integer(opts.skip))); % first line (for header)
@@ -224,6 +256,11 @@ opts = getbFileInfo(opts);
 
 % get summary (only first 6 lines) ----------------------------------------
 if ~strcmp(opts.summary, "off")
+    if strcmp(opts.summary, "firstline") % don't read lines after this.
+        out = split(opts.line, opts.sep);
+        return
+    end
+    
     fileSummary = strings(5, 1);
     if opts.header
         skip  = double(opts.skip) - 1;
@@ -240,17 +277,22 @@ if ~strcmp(opts.summary, "off")
     end
     fileSummary(fileSummary == "") = [];
     
-    if opts.header
-        disp('file first 5 rows:')
-        fileSummary = splitvars(table(split(fileSummary, opts.sep)));
-        fileSummary.Properties.VariableNames = split(opts.line, opts.sep);
+    if strcmp(opts.return, 'raw')
+        fileSummary = [opts.line;fileSummary];
+    elseif strcmp(opts.return, 'string')
+        fileSummary = split([opts.line;fileSummary], opts.sep);
     else
-        disp('file first 6 rows:')
-        fileSummary = splitvars(table(split([opts.line;fileSummary], opts.sep)));
-        fileSummary.Properties.VariableNames = "Var" + (1:size(fileSummary, 2));
+        if opts.header
+            if strcmp(opts.verbose, "on"); disp('file first 5 rows:'); end
+            fileSummary = splitvars(table(split(fileSummary, opts.sep)));
+            fileSummary.Properties.VariableNames = split(opts.line, opts.sep);
+        else
+            if strcmp(opts.verbose, "on"); disp('file first 6 rows:'); end
+            fileSummary = splitvars(table(split([opts.line;fileSummary], opts.sep)));
+            fileSummary.Properties.VariableNames = "Var" + (1:size(fileSummary, 2));
+        end
     end
-    disp(fileSummary)
-    fprintf('\n')
+    if strcmp(opts.verbose, "on"); disp(fileSummary); fprintf('\n'); end
     if strcmp(opts.summary, "only")
         out = fileSummary;
         return
@@ -258,32 +300,35 @@ if ~strcmp(opts.summary, "off")
 end
 
 % if method is "readCol" with all columns to be read, change the method to
-% "readAll" this means both patternColAll and extractColAll are true. This
-% also means, "readCol" can be invoked by setting either 'patternCol' or
-% 'extractCol' options.
-if strcmp(opts.method, "readCol") && opts.patternColAll && opts.extractColAll
+% "readAll" this means both patternColAll and extractColAll are true amd
+% 'extractRow' is nan. This also means, "readCol" can be invoked by setting
+% 'patternCol', 'extractCol' or 'extractRow' options.
+if strcmp(opts.method, "readCol") && opts.patternColAll && ...
+        opts.extractColAll && isempty(opts.extractRow(1))
     opts.method = "readAll"; % which is faster than "readCol" with all cols
 elseif opts.patternColAll && ~opts.extractColAll
     opts.patternCol = opts.extractCol; % use 'extractCol' option for "readCol"
 end
 
-tic
+if ~strcmp(opts.verbose, "off"); tic; end
 out = ''; % if crashes, return this empty char
 try
     switch opts.method
         case "readAll"
             out = reader.readAll(bfile, opts.sep, opts.skip, opts.parFlag);
         case "readCol" % --------------------------------------------------
-            if numel(opts.patternCol) > 1
+            if numel(opts.patternCol) > 1 && strcmp(opts.parFlag, "s") && isempty(opts.extractRow(1))
                 out = reader.getColumnBuffer(bfile, opts.sep, opts.patternCol, opts.skip, opts.parFlag);
             else
-                out = reader.getColumn(bfile, opts.sep, java.lang.Integer(double(opts.patternCol)), opts.skip, opts.parFlag);
+                out = reader.getColumn(bfile, opts.sep, opts.patternCol, opts.skip, opts.parFlag, opts.extractRow, java.lang.Integer(opts.chunk));
             end
         case "filter" % ---------------------------------------------------
             out = reader.filterCol(bfile, opts.sep, opts.filterCol, opts.operator, opts.filter, opts.skip, opts.parFlag, opts.extractCol);
         case "match" % ----------------------------------------------------
             if opts.multiCol
                 out = reader.multiCompareToCols(bfile, opts.skip, opts.sep, opts.pattern, opts.patternCol, opts.parFlag, opts.extractCol);
+            elseif opts.joinCol
+                out = reader.compareToJoinedCols(bfile, opts.pattern, opts.sep, opts.patternCol, opts.skip, opts.parFlag, opts.extractCol, java.lang.Integer(opts.chunk));
             else
                 if numel(opts.patternCol) == numel(opts.headerVars) % search over all columns
                     out = reader.compare(bfile, opts.pattern, opts.sep, opts.skip, opts.parFlag, opts.extractCol);
@@ -308,9 +353,9 @@ end
 %% make output MATLAB friendly --------------------------------------------
 out = javaStr2MATLAB(out, opts);
 
-elapseT = toc;
 if ~strcmp(opts.verbose, "off")
-    fprintf('Elapse time: %.3f sec\n', elapseT)
+    elapseT = toc;
+    fprintf('Elapsed time is %.3f seconds\n', elapseT)
 end
 
 end % END
@@ -340,18 +385,20 @@ lineCount = opts.lineCount;
 line = opts.line;
 
 % check 'sep' delimiter ---------------------------------------------------
-if opts.sep ~= "" % detect file delimiter
-    lineCols = line.split(opts.sep);
-    if numel(lineCols) == 1 % wrong delimiter
-        if strcmp(opts.verbose, "on")
-            fprintf('WARNING: wrong delimiter: %s\n', string(opts.sep))
-            fprintf('will try to find it automatically!\n')
-        end
-        opts.sep = "";
-    end
-end
+% @03/19/2022: commented out, since may return unexpected results
+% especially with 1 column datasets.
+% if opts.sep ~= "" % detect file delimiter
+%     lineCols = line.split(opts.sep);
+%     if numel(lineCols) == 1 % wrong delimiter
+%         if strcmp(opts.verbose, "on")
+%             fprintf('WARNING: wrong delimiter: %s\n', string(opts.sep))
+%             fprintf('will try to find it automatically!\n')
+%         end
+%         opts.sep = "";
+%     end
+% end
 
-if opts.sep == ""
+if ~isfield(opts, 'sep')
     % see https://se.mathworks.com/help/matlab/ref/whitespacepattern.html
     sepList = [char(9), char(32), char(160), char(8239), char(8199)...
         , " ", "\t", ",", ";", "|", "||", "/", "//"];
@@ -362,6 +409,8 @@ if opts.sep == ""
             break
         end
     end
+else
+    lineCols = line.split(opts.sep);
 end
 
 if opts.patternColAll % if 'patternCol' is nan, use all columns
@@ -410,12 +459,21 @@ if ~opts.readAll
     % convert col to Java integer class
     opts.patternCol = makeJavaInt(opts.patternCol, opts.method);
     opts.filterCol = makeJavaInt(opts.filterCol, opts.method);
+    if ~all(isnan(opts.extractRow))
+        % + 1 as it contains line numbers 
+        opts.extractRow = makeJavaInt(opts.extractRow + 1, "none"); % convert it to Integer array anyway
+    else
+        opts.extractRow = javaArray('java.lang.Integer', 1); % read all rows
+    end
     
     if ~opts.extractColAll
         opts = assertColLen(opts, 'extractCol', lineCols);
         % keep only header names for optional columns to be returned
         opts.headerVars = lineCols(opts.extractCol);
-        opts.extractCol = makeJavaInt(opts.extractCol, opts.method);
+        
+        % @03/02/2022 -> opts.method was replaced with "none" to allow fo
+        % single column to be read
+        opts.extractCol = makeJavaInt(opts.extractCol, "none"); 
     else
         opts.extractCol = javaArray('java.lang.Integer', 1); % return all columns
     end
@@ -430,7 +488,11 @@ opts.skip = java.lang.Integer(opts.skip);
 
 % parallel flag
 if opts.parallel
-    opts.parFlag = "sp";
+    if opts.chunk > 0 % only is supported for joined pattern search
+        opts.parFlag = "cp";
+    else
+        opts.parFlag = "sp";
+    end
 else
     opts.parFlag = "s";
 end
@@ -476,7 +538,14 @@ if isempty(out) || strcmp(opts.return, "raw") % nothing found?
     return
 end
 
-out = reshape(split(convertCharsToStrings(out), opts.sep), numel(opts.headerVars), []).';
+try
+    out = reshape(split(convertCharsToStrings(out), opts.sep), numel(opts.headerVars), []).';
+catch
+    out = convertCharsToStrings(out);
+    out = split(out, opts.sep);
+    out(out == "") = [];
+    out = reshape(out, numel(opts.headerVars), []).';
+end
 
 if contains(lower(opts.return), "table")
     out = splitvars(table(out));
