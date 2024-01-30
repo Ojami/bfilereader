@@ -1,4 +1,4 @@
-function out = bfilereader(bfile, opts)
+function [out, opts] = bfilereader(bfile, opts)
 % bfilereader (big file reader) implemenets some Java methods to filter
 % (regex and numeric filtering) big delimited files (can also be gz
 % compressed) in a fast and efficient manner.
@@ -138,8 +138,8 @@ arguments
     opts.skip (1, 1) double = 0; % number of lines to skip. Default is 0: parse all rows in the input file (see docs above).
     opts.return {mustBeMember(opts.return, ["table", "rawTable", "raw", "string"])} = "table";
     opts.parallel (1, 1) logical = false; % use parallel (true) or sequential (false) stream.
-    opts.summary {mustBeMember(opts.summary, ["on", "off", "only", "firstline"])} = "off"; % "on": show first 6 lines of file, "only": don't process files after displaying summary, "firstline": only read the first line of file (after 'skip' lines).
-    opts.verbose {mustBeMember(opts.verbose, ["on", "off", "timeOnly"])} = "timeOnly"; % "on": show warnings/messages, "timeOnly": only show elapsed time.
+    opts.summary {mustBeMember(opts.summary, ["on", "off", "only", "firstline", "linecount"])} = "off"; % "on": show first 6 lines of file, "only": don't process files after displaying summary, "firstline": only read the first line of file (after 'skip' lines).
+    opts.verbose {mustBeMember(opts.verbose, ["on", "off", "timeOnly"])} = "off"; % "on": show warnings/messages, "timeOnly": only show elapsed time.
     opts.comment {mustBeTextScalar}
 
     % under development options
@@ -231,7 +231,7 @@ if isfield(opts, 'comment')
     start = 0;
     while true
         checkline = string(reader.readHeader(bfile, java.lang.Integer(start)));
-        if ~startsWith(checkline, opts.comment)
+        if ~startsWith(checkline, opts.comment) && checkline ~= ""
              % no reason to continue with start == 0: comment can't be even
              % found in first line
             if start ~= 0
@@ -245,8 +245,11 @@ end
 
 % get file header and count rows ------------------------------------------
 opts.line = string(reader.readHeader(bfile, java.lang.Integer(opts.skip))); % first line (for header)
-if strcmp(opts.verbose, "on")
+if strcmp(opts.verbose, "on") || strcmp(opts.summary, "linecount")
     tic; opts.lineCount = double(reader.lineCount(bfile)); toc % count number of rows
+    out.linecount = opts.lineCount;
+    out.firstline = opts.line;
+    return
 else
     opts.lineCount = 1;
 end
@@ -284,11 +287,11 @@ if ~strcmp(opts.summary, "off")
     else
         if opts.header
             if strcmp(opts.verbose, "on"); disp('file first 5 rows:'); end
-            fileSummary = splitvars(table(split(fileSummary, opts.sep)));
-            fileSummary.Properties.VariableNames = split(opts.line, opts.sep);
+            fileSummary = array2table(split(fileSummary, opts.sep, 2), ...
+                'VariableNames', split(opts.line, opts.sep));
         else
             if strcmp(opts.verbose, "on"); disp('file first 6 rows:'); end
-            fileSummary = splitvars(table(split([opts.line;fileSummary], opts.sep)));
+            fileSummary = array2table(split([opts.line;fileSummary], opts.sep, 2));
             fileSummary.Properties.VariableNames = "Var" + (1:size(fileSummary, 2));
         end
     end
@@ -548,7 +551,7 @@ catch
 end
 
 if contains(lower(opts.return), "table")
-    out = splitvars(table(out));
+    out = array2table(out);
     if opts.header % if first row of input file contains header names
         out.Properties.VariableNames = opts.headerVars;
     else
